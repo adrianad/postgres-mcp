@@ -120,134 +120,96 @@ async def list_objects(
         return format_error_response(str(e))
 
 
-@mcp.tool(description="Show detailed information about a database object")
+@mcp.tool(description="Get DDL for a database object in the public schema")
 async def get_object_details(
-    schema_name: str = Field(description="Schema name"),
     object_name: str = Field(description="Object name"),
     object_type: str = Field(description="Object type: 'table', 'view', 'sequence', or 'extension'", default="table"),
 ) -> ResponseType:
-    """Get detailed information about a database object."""
+    """Get DDL for a database object in the public schema."""
     try:
         sql_driver = await get_sql_driver()
 
-        if object_type in ("table", "view"):
-            # Get columns
-            col_rows = await SafeSqlDriver.execute_param_query(
+        if object_type == "table":
+            # Use pg_dump-style DDL generation for tables
+            rows = await SafeSqlDriver.execute_param_query(
                 sql_driver,
                 """
-                SELECT column_name, data_type, is_nullable, column_default
-                FROM information_schema.columns
-                WHERE table_schema = {} AND table_name = {}
-                ORDER BY ordinal_position
+                SELECT 
+                    'CREATE TABLE ' || schemaname || '.' || tablename || ' (' || E'\n' ||
+                    string_agg(
+                        '    ' || column_name || ' ' || 
+                        CASE 
+                            WHEN data_type = 'character varying' THEN 
+                                CASE WHEN character_maximum_length IS NOT NULL 
+                                     THEN 'varchar(' || character_maximum_length || ')'
+                                     ELSE 'varchar' END
+                            WHEN data_type = 'character' THEN 'char(' || character_maximum_length || ')'
+                            WHEN data_type = 'numeric' THEN 
+                                CASE WHEN numeric_precision IS NOT NULL AND numeric_scale IS NOT NULL
+                                     THEN 'numeric(' || numeric_precision || ',' || numeric_scale || ')'
+                                     ELSE 'numeric' END
+                            ELSE data_type 
+                        END ||
+                        CASE WHEN is_nullable = 'NO' THEN ' NOT NULL' ELSE '' END ||
+                        CASE WHEN column_default IS NOT NULL THEN ' DEFAULT ' || column_default ELSE '' END,
+                        ',' || E'\n'
+                        ORDER BY ordinal_position
+                    ) || E'\n' || ');' as ddl
+                FROM information_schema.columns c
+                JOIN pg_tables t ON c.table_name = t.tablename AND c.table_schema = t.schemaname
+                WHERE c.table_schema = {} AND c.table_name = {}
+                GROUP BY schemaname, tablename
                 """,
-                [schema_name, object_name],
-            )
-            columns = (
-                [
-                    {
-                        "column": r.cells["column_name"],
-                        "data_type": r.cells["data_type"],
-                        "is_nullable": r.cells["is_nullable"],
-                        "default": r.cells["column_default"],
-                    }
-                    for r in col_rows
-                ]
-                if col_rows
-                else []
+                ["public", object_name],
             )
 
-            # Get constraints
-            con_rows = await SafeSqlDriver.execute_param_query(
+        elif object_type == "view":
+            rows = await SafeSqlDriver.execute_param_query(
                 sql_driver,
                 """
-                SELECT tc.constraint_name, tc.constraint_type, kcu.column_name
-                FROM information_schema.table_constraints AS tc
-                LEFT JOIN information_schema.key_column_usage AS kcu
-                  ON tc.constraint_name = kcu.constraint_name
-                 AND tc.table_schema = kcu.table_schema
-                WHERE tc.table_schema = {} AND tc.table_name = {}
+                SELECT 'CREATE VIEW ' || schemaname || '.' || viewname || ' AS ' || E'\n' || definition as ddl
+                FROM pg_views 
+                WHERE schemaname = {} AND viewname = {}
                 """,
-                [schema_name, object_name],
+                ["public", object_name],
             )
-
-            constraints = {}
-            if con_rows:
-                for row in con_rows:
-                    cname = row.cells["constraint_name"]
-                    ctype = row.cells["constraint_type"]
-                    col = row.cells["column_name"]
-
-                    if cname not in constraints:
-                        constraints[cname] = {"type": ctype, "columns": []}
-                    if col:
-                        constraints[cname]["columns"].append(col)
-
-            constraints_list = [{"name": name, **data} for name, data in constraints.items()]
-
-            # Get indexes
-            idx_rows = await SafeSqlDriver.execute_param_query(
-                sql_driver,
-                """
-                SELECT indexname, indexdef
-                FROM pg_indexes
-                WHERE schemaname = {} AND tablename = {}
-                """,
-                [schema_name, object_name],
-            )
-
-            indexes = [{"name": r.cells["indexname"], "definition": r.cells["indexdef"]} for r in idx_rows] if idx_rows else []
-
-            result = {
-                "basic": {"schema": schema_name, "name": object_name, "type": object_type},
-                "columns": columns,
-                "constraints": constraints_list,
-                "indexes": indexes,
-            }
 
         elif object_type == "sequence":
             rows = await SafeSqlDriver.execute_param_query(
                 sql_driver,
                 """
-                SELECT sequence_schema, sequence_name, data_type, start_value, increment
+                SELECT 'CREATE SEQUENCE ' || sequence_schema || '.' || sequence_name || 
+                       CASE WHEN start_value IS NOT NULL THEN E'\n    START WITH ' || start_value ELSE '' END ||
+                       CASE WHEN increment IS NOT NULL THEN E'\n    INCREMENT BY ' || increment ELSE '' END ||
+                       ';' as ddl
                 FROM information_schema.sequences
                 WHERE sequence_schema = {} AND sequence_name = {}
                 """,
-                [schema_name, object_name],
+                ["public", object_name],
             )
-
-            if rows and rows[0]:
-                row = rows[0]
-                result = {
-                    "schema": row.cells["sequence_schema"],
-                    "name": row.cells["sequence_name"],
-                    "data_type": row.cells["data_type"],
-                    "start_value": row.cells["start_value"],
-                    "increment": row.cells["increment"],
-                }
-            else:
-                result = {}
 
         elif object_type == "extension":
             rows = await SafeSqlDriver.execute_param_query(
                 sql_driver,
                 """
-                SELECT extname, extversion, extrelocatable
+                SELECT 'CREATE EXTENSION ' || extname || 
+                       CASE WHEN extversion IS NOT NULL THEN ' VERSION ''' || extversion || '''' ELSE '' END ||
+                       ';' as ddl
                 FROM pg_extension
                 WHERE extname = {}
                 """,
                 [object_name],
             )
 
-            if rows and rows[0]:
-                row = rows[0]
-                result = {"name": row.cells["extname"], "version": row.cells["extversion"], "relocatable": row.cells["extrelocatable"]}
-            else:
-                result = {}
-
         else:
             return format_error_response(f"Unsupported object type: {object_type}")
 
-        return format_text_response(result)
+        if rows and rows[0]:
+            ddl = rows[0].cells["ddl"]
+            return format_text_response(ddl)
+        else:
+            return format_error_response(f"{object_type} '{object_name}' not found")
+
     except Exception as e:
         logger.error(f"Error getting object details: {e}")
         return format_error_response(str(e))

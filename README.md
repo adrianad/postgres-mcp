@@ -16,5 +16,5 @@ Postgres MCP Pro Tools:
 | Tool Name | Description |
 |-----------|-------------|
 | `list_objects` | Lists database objects (tables, views, sequences, extensions) in the public schema. |
-| `get_object_details` | Provides information about a specific database object, for example, a table's columns, constraints, and indexes. |
+| `get_object_details` | Returns the DDL (CREATE statement) for a database object in the public schema. |
 | `execute_sql` | Executes SQL statements on the database, with read-only limitations when connected in restricted mode. |
