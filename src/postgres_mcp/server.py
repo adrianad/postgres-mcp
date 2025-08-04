@@ -65,12 +65,11 @@ def format_error_response(error: str) -> ResponseType:
 
 
 
-@mcp.tool(description="List objects in a schema")
+@mcp.tool(description="List objects in the public schema")
 async def list_objects(
-    schema_name: str = Field(description="Schema name"),
     object_type: str = Field(description="Object type: 'table', 'view', 'sequence', or 'extension'", default="table"),
 ) -> ResponseType:
-    """List objects of a given type in a schema."""
+    """List objects of a given type in the public schema."""
     try:
         sql_driver = await get_sql_driver()
 
@@ -79,50 +78,38 @@ async def list_objects(
             rows = await SafeSqlDriver.execute_param_query(
                 sql_driver,
                 """
-                SELECT table_schema, table_name, table_type
+                SELECT table_name
                 FROM information_schema.tables
                 WHERE table_schema = {} AND table_type = {}
                 ORDER BY table_name
                 """,
-                [schema_name, table_type],
+                ["public", table_type],
             )
-            objects = (
-                [{"schema": row.cells["table_schema"], "name": row.cells["table_name"], "type": row.cells["table_type"]} for row in rows]
-                if rows
-                else []
-            )
+            objects = [row.cells["table_name"] for row in rows] if rows else []
 
         elif object_type == "sequence":
             rows = await SafeSqlDriver.execute_param_query(
                 sql_driver,
                 """
-                SELECT sequence_schema, sequence_name, data_type
+                SELECT sequence_name
                 FROM information_schema.sequences
                 WHERE sequence_schema = {}
                 ORDER BY sequence_name
                 """,
-                [schema_name],
+                ["public"],
             )
-            objects = (
-                [{"schema": row.cells["sequence_schema"], "name": row.cells["sequence_name"], "data_type": row.cells["data_type"]} for row in rows]
-                if rows
-                else []
-            )
+            objects = [row.cells["sequence_name"] for row in rows] if rows else []
 
         elif object_type == "extension":
             # Extensions are not schema-specific
             rows = await sql_driver.execute_query(
                 """
-                SELECT extname, extversion, extrelocatable
+                SELECT extname
                 FROM pg_extension
                 ORDER BY extname
                 """
             )
-            objects = (
-                [{"name": row.cells["extname"], "version": row.cells["extversion"], "relocatable": row.cells["extrelocatable"]} for row in rows]
-                if rows
-                else []
-            )
+            objects = [row.cells["extname"] for row in rows] if rows else []
 
         else:
             return format_error_response(f"Unsupported object type: {object_type}")

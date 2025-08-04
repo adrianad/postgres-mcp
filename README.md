@@ -15,6 +15,6 @@ Postgres MCP Pro Tools:
 
 | Tool Name | Description |
 |-----------|-------------|
-| `list_objects` | Lists database objects (tables, views, sequences, extensions) within a specified schema. |
+| `list_objects` | Lists database objects (tables, views, sequences, extensions) in the public schema. |
 | `get_object_details` | Provides information about a specific database object, for example, a table's columns, constraints, and indexes. |
 | `execute_sql` | Executes SQL statements on the database, with read-only limitations when connected in restricted mode. |
