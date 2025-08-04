@@ -24,7 +24,7 @@ Postgres MCP Pro Tools:
 First, build the Docker image from the local code:
 
 ```bash
-docker build -t postgres-mcp-minimal .
+DOCKER_BUILDKIT=1 docker build -t postgres-mcp-minimal .
 ```
 
 Then add this configuration to your MCP client (e.g., Claude Desktop, Cursor, etc.):
