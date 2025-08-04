@@ -18,3 +18,39 @@ Postgres MCP Pro Tools:
 | `list_objects` | Lists database objects (tables, views, sequences, extensions) in the public schema. |
 | `get_object_details` | Returns the DDL (CREATE statement) for a database object in the public schema. |
 | `execute_sql` | Executes SQL statements on the database, with read-only limitations when connected in restricted mode. |
+
+## Quick Start
+
+First, build the Docker image from the local code:
+
+```bash
+docker build -t postgres-mcp-minimal .
+```
+
+Then add this configuration to your MCP client (e.g., Claude Desktop, Cursor, etc.):
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "--name",
+        "postgres-mcp",
+        "-e",
+        "DATABASE_URI",
+        "postgres-mcp-minimal",
+        "--access-mode=restricted"
+      ],
+      "env": {
+        "DATABASE_URI": "postgresql://username:password@host:port/database"
+      }
+    }
+  }
+}
+```
+
+Replace the `DATABASE_URI` with your actual PostgreSQL connection details.
