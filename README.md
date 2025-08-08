@@ -1,6 +1,6 @@
 ## Minimal Postgres MCP Server
 
-This is a minimal implementation of a Postgres MCP server focused on basic database querying and table inspection. It provides only the essential tools needed for a simple database bot.
+This is a minimal implementation of a Postgres MCP server focused purely on SQL execution. It provides only the `execute_sql` tool for running queries.
 
 ## MCP Server API
 
@@ -15,8 +15,6 @@ Postgres MCP Pro Tools:
 
 | Tool Name | Description |
 |-----------|-------------|
-| `list_objects` | Lists database objects (tables, views, sequences, extensions) in the public schema. |
-| `get_object_details` | Returns the DDL (CREATE statement) for a database object in the public schema. |
 | `execute_sql` | Executes SQL statements on the database, with read-only limitations when connected in restricted mode. |
 
 ## Quick Start
@@ -54,3 +52,39 @@ Then add this configuration to your MCP client (e.g., Claude Desktop, Cursor, et
 ```
 
 Replace the `DATABASE_URI` with your actual PostgreSQL connection details.
+
+## SSE Server Mode
+
+If your MCP client only supports SSE transport, you can run the server in SSE mode:
+
+```bash
+DOCKER_BUILDKIT=1 docker build -t postgres-mcp-minimal .
+docker run -d -p 8000:8000 --name postgres-mcp-minimal \
+  -e DATABASE_URI="postgresql://username:password@host:port/database" \
+  postgres-mcp-minimal --access-mode=restricted --transport=sse
+```
+
+Then configure your MCP client to connect via SSE:
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "type": "sse",
+      "url": "http://localhost:8000/sse"
+    }
+  }
+}
+```
+
+**Important**: The SSE endpoint is at `/sse`, not the root path. If you're using a different port or host, adjust the URL accordingly:
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "type": "sse",
+      "url": "http://your-host:8003/sse"
+    }
+  }
+}
+```
